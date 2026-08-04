@@ -57,7 +57,7 @@ __global__ void decode_attention_paged(const float* q, const float* K, const flo
     for(int i{}; i < seq_len; i++) {
         float dot = 0.0f;
         for (int j{}; j < d_k; j++) {
-            dot += q[j] * K[paged_index(block_table, i, j, block_sizde, d_k)];
+            dot += q[j] * K[paged_index(block_table, i, j, block_size, d_k)];
         }
         scores[i] = dot / sqrtf((float)d_k); 
     }
