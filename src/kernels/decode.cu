@@ -41,6 +41,53 @@ __global__ void decode_attention(const float* q, const float* K, const float* V,
     }
 }
 
+// given a logical token position 'i' and element 'j', return the flat index for K/V from the block table
+__device__ int paged_index(const int* block_table, int i, int j, int block_size, int d_k) {
+    int logical_block = i / block_size;
+    int slot = i % block_size;
+    int physical_block = block_table[logical_block];
+    return physical_block * (block_size * d_k) + slot * d_k + j;
+}
+
+__global__ void decode_attention_paged(const float* q, const float* K, const float* V, float* out, int seq_len, int d_k, const int* block_table, int block_size) {
+    float scores[64]; // row of scores one query produces
+    
+    // np.matmul(q_row, k_cache.T)
+    // for each cached token i, dot query with key
+    for(int i{}; i < seq_len; i++) {
+        float dot = 0.0f;
+        for (int j{}; j < d_k; j++) {
+            dot += q[j] * K[paged_index(block_table, i, j, block_sizde, d_k)];
+        }
+        scores[i] = dot / sqrtf((float)d_k); 
+    }
+
+    // find max score for softmax
+    float max_score = scores[0];
+    for(int i = 1; i < seq_len; i++) {
+        if (scores[i] > max_score) {
+            max_score = scores[i];
+        }
+    }
+
+    // exp(score- max) / sum of exp(score - max) 
+    float sum = 0.0f;
+    for(int i{}; i < seq_len; i++) {
+        scores[i] = expf(scores[i] - max_score);
+        sum += scores[i];
+    }
+
+    // output = weighted sum of value rows
+    for(int i{}; i < d_k; i++) {
+        float acc = 0.0f;
+        for(int j{}; j < seq_len; j++) {
+            float weight = scores[j] / sum; // softmax weight for token i
+            acc += weight * V[paged_index(block_table, j, i, block_size, d_k)];
+        }
+        out[i] = acc;
+    }
+}
+
 int main() {
     const int seq_len = 3, d_k = 4;
 
