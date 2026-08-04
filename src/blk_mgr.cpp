@@ -1,5 +1,6 @@
 #include <vector>
 #include <utility>
+#include <iostream>
 
 class Block_Manager {
     public: 
@@ -26,6 +27,23 @@ class Block_Manager {
             }
             length = 0;
         }
+        std::pair<int, int> get_physical_location(int position) {
+            int block = position / block_size; // gets floored due to "int", logical block
+            int slot = position % block_size;
+            return {block_list[block], slot};
+        }
+        void print_state() {
+            std::cout << "Free blocks: ";
+            for(int i : free_list) {
+                std::cout << i << " ";
+            }
+            std::cout << '\n';
+            std::cout << "Used blocks: ";
+            for(int i : block_list) {
+                std::cout << i << " ";
+            }
+            std::cout << '\n';
+        }
     private:
         int block_size = 4;
         std::vector<int> free_list; // list of available blocks
@@ -33,3 +51,11 @@ class Block_Manager {
         int length = 0; // length of current sequence
 };
 
+int main() {
+    Block_Manager blk_mgr;
+    blk_mgr.init(10);
+    for(int i{}; i < 5; i++) {
+        blk_mgr.append_token();
+    }
+    blk_mgr.print_state();
+}
