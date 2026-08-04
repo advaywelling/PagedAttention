@@ -1,8 +1,44 @@
 #include <iostream>
 #include <cmath>
 
+// decode attention for ONE query against a pre-filled KV cache
 __global__ void decode_attention(const float* q, const float* K, const float* V, float* out, int seq_len, int d_k) {
+    float scores[64]; // row of scores one query produces
     
+    // np.matmul(q_row, k_cache.T)
+    // for each cached token i, dot query with key
+    for(int i{}; i < seq_len; i++) {
+        float dot = 0.0f;
+        for (int j{}; j < d_k; j++) {
+            dot += q[j] * K[i * d_k + j];
+        }
+        scores[i] = dot / sqrtf((float)d_k); 
+    }
+
+    // find max score for softmax
+    float max_score = scores[0];
+    for(int i = 1; i < seq_len; i++) {
+        if (scores[i] > max_score) {
+            max_score = scores[i];
+        }
+    }
+
+    // exp(score- max) / sum of exp(score - max) 
+    float sum = 0.0f;
+    for(int i{}; i < seq_len; i++) {
+        scores[i] = expf(scores[i] - max_score);
+        sum += scores[i];
+    }
+
+    // output = weighted sum of value rows
+    for(int i{}; i < d_k; i++) {
+        float acc = 0.0f;
+        for(int j{}; j < seq_len; j++) {
+            float weight = scores[j] / sum; // softmax weight for token i
+            acc += weight * V[j * d_k + i];
+        }
+        out[i] = acc;
+    }
 }
 
 int main() {
@@ -28,7 +64,7 @@ int main() {
     cudaMemcpy(d_out, h_out, d_k * sizeof(float), cudaMemcpyHostToDevice);
 
     // just doing serially first lol
-    decode_attention<<1,1>>(d_q, d_K, d_V, d_out, seq_len, d_k);
+    decode_attention<<<1,1>>>(d_q, d_K, d_V, d_out, seq_len, d_k);
 
     // copy mem to cpu
     cudaMemcpy(h_out, d_out, d_k * sizeof(float), cudaMemcpyDeviceToHost);
