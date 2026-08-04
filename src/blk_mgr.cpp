@@ -45,6 +45,16 @@ class Block_Manager {
             }
             std::cout << '\n';
         }
+        void memory_stats() {
+            int block_count {};
+            int token_count {};
+            for(auto& entry : block_list) {
+                token_count += length[entry.first]; // entry.first = seq_id
+                block_count += entry.second.size(); // entry.second = blocks
+            }
+            std::cout << "Total blocks used: " << block_count << '\n';
+            std::cout << "Wasted slots: " << (block_count * block_size) - token_count << '\n';
+        }
     private:
         int block_size = 4;
         std::vector<int> free_list {}; // list of available blocks
@@ -68,7 +78,8 @@ int main() {
     std::cout << "--- after appends ---\n";
     blk_mgr.print_state(0);
     blk_mgr.print_state(1);
-
+    blk_mgr.memory_stats();
+    
     // free sequence 0, its boxes should return to the pool
     blk_mgr.free_sequence(0);
     std::cout << "--- after freeing seq 0 ---\n";
