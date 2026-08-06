@@ -89,13 +89,29 @@ __global__ void decode_attention_paged(const float* q, const float* K, const flo
 }
 
 int main() {
-    const int seq_len = 3, d_k = 4;
+    const int seq_len = 3, d_k = 4, block_size = 2;
 
-    // host values
+    // host values - naive 
     float h_q[d_k] = {1, 0, 1, 0};
     float h_K[seq_len * d_k] = { 1,0,0,0,  0,1,0,0,  1,1,0,0 };
     float h_V[seq_len * d_k] = { 1,2,3,4,   5,6,7,8,   9,10,11,12 };
     float h_out[d_k] = {};
+
+    //host values - paged 
+    int h_block_table[] = {2, 0};
+    const int num_phys_blocks = 3;
+    const int pool_floats = num_phys_blocks * block_size * d_k;
+    float h_K_paged[pool_floats] = {
+        1,1,0,0,   9,9,9,9,   // phys block 0: token2 key [1,1,0,0], then unused slot
+        7,7,7,7,   7,7,7,7,   // phys block 1: junk
+        1,0,0,0,   0,1,0,0    // phys block 2: token0 key [1,0,0,0], token1 key [0,1,0,0]
+    };
+    float h_V_paged[pool_floats] = {
+        9,10,11,12,  0,0,0,0,  // phys block 0: token2 value [9,10,11,12], unused
+        7,7,7,7,     7,7,7,7,  // phys block 1: junk
+        1,2,3,4,     5,6,7,8   // phys block 2: token0 value, token1 value
+    };
+    float h_out_paged[d_k] {};
 
     // gpu pointers
     float *d_q, *d_K, *d_V, *d_out;
@@ -104,21 +120,41 @@ int main() {
     cudaMalloc(&d_V, d_k * seq_len * sizeof(float));
     cudaMalloc(&d_out, d_k * sizeof(float));
 
+    float *d_q_paged, *d_K_paged, *d_V_paged, *d_out_paged;
+    int *d_block_table;
+    cudaMalloc(&d_q_paged, d_k * sizeof(float));
+    cudaMalloc(&d_K_paged, pool_floats * sizeof(float));
+    cudaMalloc(&d_V_paged, pool_floats * sizeof(float));
+    cudaMalloc(&d_out_paged, d_k * sizeof(float));
+    cudaMalloc(&d_block_table, 2 * sizeof(int));
+
     // copy mem to gpu
     cudaMemcpy(d_q, h_q, d_k * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_K, h_K, d_k * seq_len * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_V, h_V, d_k * seq_len * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_out, h_out, d_k * sizeof(float), cudaMemcpyHostToDevice);
 
+    cudaMemcpy(d_q_paged, h_q, d_k * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_K_paged, h_K_paged, pool_floats * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_V_paged, h_V_paged, pool_floats * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_block_table, h_block_table, 2 * sizeof(int), cudaMemcpyHostToDevice);
+
     // just doing serially first lol
     decode_attention<<<1,1>>>(d_q, d_K, d_V, d_out, seq_len, d_k);
+    decode_attention_paged<<<1,1>>>(d_q_paged, d_K_paged, d_V_paged, d_out_paged, seq_len, d_k, d_block_table, block_size);
 
     // copy mem to cpu
     cudaMemcpy(h_out, d_out, d_k * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_out_paged, d_out_paged, d_k * sizeof(float), cudaMemcpyDeviceToHost);
 
-    std::cout << "Output: ";
+    std::cout << "Naive output: ";
     for (int i{}; i < d_k; i++) {
         std::cout << h_out[i] << " ";
+    }
+    std::cout << '\n';
+    std::cout << "Paged output: ";
+    for (int i{}; i < d_k; i++) {
+        std::cout << h_out_paged[i] << " ";
     }
     std::cout << '\n';
 
@@ -126,5 +162,10 @@ int main() {
     cudaFree(d_K);
     cudaFree(d_V);
     cudaFree(d_out);
+    cudaFree(d_q_paged);
+    cudaFree(d_K_paged);
+    cudaFree(d_V_paged);
+    cudaFree(d_out_paged);
+    cudaFree(block_table);
     return 0;
 }
