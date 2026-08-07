@@ -60,33 +60,56 @@ class Block_Manager {
             std::cout << "Wasted slots: " << (block_count * block_size) - token_count << '\n';
             std::cout << "Utilization: " << (double)token_count / (block_count * block_size) * 100 <<  "%" << '\n';
         }
+        std::pair<int,int> get_stats() {
+            int tokens {};
+            int blocks {};
+            for (auto& entry : block_list) {
+                tokens += length[entry.first];
+                blocks += entry.second.size();
+            }
+            return {blocks * block_size, tokens};
+        }
     private:
-        int block_size = 4;
+        int block_size = 16;
         std::vector<int> free_list {}; // list of available blocks
         std::unordered_map<int, std::vector<int>> block_list {}; // seq_id -> list of blocks used by seq
         std::unordered_map<int, int> length {}; // seq_id -> length of seq
 };
 
 int main() {
-    Block_Manager blk_mgr;
-    blk_mgr.init(10);
+    const int num_seq= 100;
+    const int max_seq_len = 128;
+    const int block_size = 16;
 
-    // sequence 0 appends 5 tokens -> should grab 2 boxes
-    for (int i = 0; i < 5; i++) {
-        blk_mgr.append_token(0);
+    // generate varied workload
+    srand(42);
+    std::vector<int> lengths;
+    int total_used_tokens {};
+    for(int i {}; i < num_seq; i ++) {
+        int len = rand() % max_seq_len + 1;
+        lengths.push_back(len);
+        total_used_tokens += len;
     }
-    // sequence 1 appends 3 tokens -> should grab 1 box
-    for (int i = 0; i < 3; i++) {
-        blk_mgr.append_token(1);
+    int naive = num_seq * max_seq_len;
+
+    Block_Manager mgr;
+    mgr.init(100000); // big pool so we don't run out during benchmark
+    for(int i{}; i < num_seq; i++) {
+        for(int j{}; j < lengths[i]; j++) {
+            mgr.append_token(i);
+        }
     }
+    auto stats = mgr.get_stats();
+    int paged = stats.first;
+    int paged_used = stats.second;
+    std::cout << "Total real tokens: " << total_used_tokens << "\n\n";
 
-    std::cout << "--- after appends ---\n";
-    blk_mgr.print_state(0);
-    blk_mgr.print_state(1);
-    blk_mgr.memory_stats();
+    std::cout << "NAIVE allocated slots: " << naive << "\n";
+    std::cout << "NAIVE utilization: " << (double)total_used_tokens / naive * 100 << "%\n\n";
 
-    // free sequence 0, its boxes should return to the pool
-    blk_mgr.free_sequence(0);
-    std::cout << "--- after freeing seq 0 ---\n";
-    blk_mgr.print_state(1);   // seq 1 untouched, but free list grew
+    std::cout << "PAGED allocated slots: " << paged << "\n";
+    std::cout << "PAGED utilization: " << (double)paged_used / paged * 100 << "%\n\n";
+
+    std::cout << "Paged uses " << (double)paged / naive * 100 << "% of the memory naive does\n";
+    return 0;
 }
