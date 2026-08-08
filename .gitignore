@@ -1,0 +1,6 @@
+blk_mgr
+src/blk_mgr
+decode
+*.o
+*.bin
+__pycache__/

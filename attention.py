@@ -14,7 +14,7 @@ def prefill_attention(Q: np.ndarray, K: np.ndarray, V: np.ndarray) -> np.ndarray
   d_k = dimensions/embeddings for each vector (size of vector/floats per token)
   '''
 
-  S, d_k = Q.shape;
+  S, d_k = Q.shape
 
   scores = np.matmul(Q, K.T) * (1/np.sqrt(d_k));
   mask = np.triu(np.ones((S,S), dtype=bool), k=1)
